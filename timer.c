@@ -35,7 +35,7 @@ static struct timer_list tick_timer;
 static struct kobject * kobj;
 static struct kobj_attribute tick_attr =__ATTR(tick, 0666, file_read, file_write);
 static struct attribute *attrs[] = {&tick_attr.attr, NULL};
-static struct attribute_group attr_group = { .attrs = attrs,};
+static struct attribute_group attr_group = { .attrs = attrs };
 
 void tick_timer_callback(unsigned long data)
 {
