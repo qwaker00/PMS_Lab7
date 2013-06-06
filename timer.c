@@ -5,63 +5,54 @@
 #include <linux/timer.h>
 #include <linux/init.h>
 
-atomic_t tact = ATOMIC_INIT(5000);
+#define DRIVER_AUTHOR "Eugene Gritskevich <qwaker.00@gmail.com>"
+#define DRIVER_DESC   "Timer module"
 
-static struct timer_list sos_timer;
+atomic_t interval = ATOMIC_INIT(1000);
 
-static struct kobject * kobj;
-
-static ssize_t file_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf);
-
-static ssize_t file_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count);
-
-static struct kobj_attribute sos_attr =__ATTR(sos, 0666,    file_show, file_store);
-
-static struct attribute *attrs[] = {
-    &sos_attr.attr, NULL
-};
-
-static struct attribute_group attr_group = {
-    .attrs = attrs,
-};
-
-void sos_timer_callback(unsigned long data)
+static ssize_t file_read(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-    int c = atomic_read(&tact);
-    if (c != -1) {
-        printk(KERN_INFO "Timer tick. Frequency is %d\n", c);
-        mod_timer(&sos_timer, jiffies + msecs_to_jiffies(c));
-    }
+    return sprintf(buf, "Timer frequency is %d msecs.\n", atomic_read(&interval));
 }
 
-static ssize_t file_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
-{
-    return sprintf(buf, "Timer frequency is %d msecs now.\n", atomic_read(&tact));
-}
-
-static ssize_t file_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+static ssize_t file_write(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
     int res, cache = 0;
-    res = sscanf(buf, "%du", &cache);
+    res = sscanf(buf, "%u", &cache);
     if (res <= 0) {
-        printk(KERN_ERR "Value is not appliable: %s!\n", buf);
+        printk(KERN_ERR "Bad value: %s!\n", buf);
         return count;
     }
     if (cache > 500) {
-        atomic_set(&tact, cache);
+        atomic_set(&interval, cache);
     } else {
-        printk(KERN_ERR "%d value is invalid.\n", cache);
+        printk(KERN_ERR "Bad value %d.\n", cache);
     }
     return count;
 }
+ 
+static struct timer_list tick_timer;
+static struct kobject * kobj;
+static struct kobj_attribute tick_attr =__ATTR(tick, 0666, file_read, file_write);
+static struct attribute *attrs[] = {&tick_attr.attr, NULL};
+static struct attribute_group attr_group = { .attrs = attrs,};
 
-static int __init timer_init(void)
+void tick_timer_callback(unsigned long data)
 {
-    int ret, start = atomic_read(&tact);
-    printk(KERN_INFO "Timer module is installing.\n");
-    setup_timer(&sos_timer, sos_timer_callback, 0);
-    printk(KERN_INFO "Starting timer to fire in default %dms (jiffies %ld)\n", start, jiffies);
-    ret = mod_timer(&sos_timer, jiffies + msecs_to_jiffies(start));
+    int c = atomic_read(&interval);
+    if (c != -1) {
+        printk(KERN_INFO "Timer tick. Frequency is %d\n", c);
+        mod_timer(&tick_timer, jiffies + msecs_to_jiffies(c));
+    }
+}
+
+static int __init init(void)
+{
+    int ret, start = atomic_read(&interval);
+    printk(KERN_INFO "Timer module init.\n");
+    setup_timer(&tick_timer, tick_timer_callback, 0);
+    printk(KERN_INFO "Starting timer. Frequency %dms\n", start);
+    ret = mod_timer(&tick_timer, jiffies + msecs_to_jiffies(start));
     if (ret) {
         printk(KERN_INFO "Error when setting up timer.\n");
     }
@@ -76,21 +67,22 @@ static int __init timer_init(void)
     return ret;
 }
 
-static void __exit timer_exit(void)
+static void __exit cleanup(void)
 {
     int ret;
-    atomic_set(&tact, -1);
-    ret = del_timer(&sos_timer);
+    atomic_set(&interval, -1);
+    ret = del_timer(&tick_timer);
     if (ret) {
-        printk(KERN_ERR "Failed to turn off timer.\n");
+        printk(KERN_ERR "Failed to shutdown timer.\n");
     }
     kobject_put(kobj);
-    printk(KERN_INFO "Timer module uninstalled.\n");
+    printk(KERN_INFO "Timer module exit.\n");
 }
 
+module_init(init);
+module_exit(cleanup);
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Eugene Gritskevich");
-
-module_init(timer_init);
-module_exit(timer_exit);
+MODULE_AUTHOR(DRIVER_AUTHOR);
+MODULE_DESCRIPTION(DRIVER_DESC);
+MODULE_SUPPORTED_DEVICE("idevice");
 
